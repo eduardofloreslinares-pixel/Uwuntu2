@@ -1,0 +1,43 @@
+name: Compilar APK de Mario Kart World
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Preparar Android SDK y NDK
+        shell: bash
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          (set +o pipefail; yes | "$sdkmanager" --licenses >/dev/null)
+          "$sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358" "cmake;3.22.1"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/app/local.properties
+
+      - name: Compilar el packer y el traductor
+        run: zsh android/ondevice/build.sh "$RUNNER_TEMP/mkw-pack"
+
+      - name: Compilar APK
+        working-directory: android/app
+        run: bash ./gradlew --no-daemon -PnxGames=0400C3F00006E000 -PnxApp=mkw "-PnxPackStage=$RUNNER_TEMP/mkw-pack/stage" apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BananaNative-MKW-APK
+          path: android/app/out/nxnative-android-mkw.apk
+          if-no-files-found: error
